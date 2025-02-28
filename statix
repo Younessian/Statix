@@ -1,0 +1,97 @@
+#!/bin/bash
+
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+RESET='\033[0m'
+
+show_help() {
+  echo -e "${YELLOW}Usage: statix [options]${RESET}"
+  echo -e "Options:"
+  echo -e "  -h, --help         Display this help message."
+  echo -e "  -f, --file FILE    Specify the subdomains file (default: 'Subdomains')."
+  echo -e "  -d, --directory DIR Specify the directory to save previous results (default: 'previous_results/statix')."
+  echo -e "Example: statix -f subdomains.txt -d /path/to/results/"
+  exit 0
+}
+
+SUBDOMAINS_FILE="Subdomains"
+RESULTS_DIR="previous_results/statix"
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    -h|--help) show_help ;;
+    -f|--file) SUBDOMAINS_FILE="$2"; shift ;;
+    -d|--directory) RESULTS_DIR="$2"; shift ;;
+    *) echo -e "${RED}Error: Unknown option $1${RESET}"; show_help ;;
+  esac
+  shift
+done
+
+if [ ! -f "$SUBDOMAINS_FILE" ] || [ ! -s "$SUBDOMAINS_FILE" ]; then
+  echo -e "${RED}Error: Subdomains file is missing or empty. Exiting.${RESET}"
+  exit 1
+fi
+
+mkdir -p "$RESULTS_DIR/httpx"
+current_httpx="$RESULTS_DIR/httpx/httpx_current.tmp"
+previous_httpx="$RESULTS_DIR/httpx/httpx_previous.tmp"
+
+echo -e "${GREEN}Running HTTPX for Status Monitoring...${RESET}"
+httpx -l "$SUBDOMAINS_FILE" -silent -status-code -title > "$current_httpx"
+
+if [ ! -s "$current_httpx" ]; then
+  echo -e "${RED}Error: HTTPX output is empty. Check your Subdomains file and HTTPX installation.${RESET}"
+  exit 1
+fi
+
+if [ ! -f "$previous_httpx" ]; then
+  echo -e "${YELLOW}No previous HTTPX results found. Saving current results.${RESET}"
+  cp "$current_httpx" "$previous_httpx"
+else
+  echo -e "${GREEN}Comparing HTTPX results with previous runs...${RESET}"
+
+  added=$(comm -13 <(sort "$previous_httpx") <(sort "$current_httpx"))
+  removed=$(comm -23 <(sort "$previous_httpx") <(sort "$current_httpx"))
+
+  changed=$(comm -12 <(sort "$previous_httpx") <(sort "$current_httpx") | awk -F ' ' '
+    NR==FNR {prev[$1]=$0; next} 
+    ($1 in prev) && prev[$1] != $0 {print $1, "[" prev[$1] "]", ">", "[" $0 "]"}
+  ' "$previous_httpx" "$current_httpx")
+
+  added=$(echo "$added" | awk -F ' ' '
+    NR==FNR {curr[$1]=$0; next} 
+    !($1 in curr) {print $0}
+  ' <(echo "$changed") -)
+  
+  removed=$(echo "$removed" | awk -F ' ' '
+    NR==FNR {curr[$1]=$0; next} 
+    !($1 in curr) {print $0}
+  ' <(echo "$changed") -)
+
+  if [ -n "$added" ] || [ -n "$removed" ] || [ -n "$changed" ]; then
+    echo -e "${GREEN}Status changes detected!${RESET}"
+
+    if [ -n "$added" ]; then
+      echo -e "${YELLOW}Newly added entries:${RESET}"
+      echo "$added"
+    fi
+
+    if [ -n "$removed" ]; then
+      echo -e "${YELLOW}Removed entries:${RESET}"
+      echo "$removed"
+    fi
+
+    if [ -n "$changed" ]; then
+      echo -e "${YELLOW}Changed entries (status code or content length updates):${RESET}"
+      echo "$changed"
+    fi
+  else
+    echo -e "${GREEN}No status changes detected.${RESET}"
+  fi
+
+  cp "$current_httpx" "$previous_httpx"
+  rm -rf *.tmp
+  rm -rf previous_results/statix/*.tmp
+
+fi
