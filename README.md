@@ -68,11 +68,24 @@ old.example.com [404 Not Found]
 Changed entries:
 sub.example.com [200 OK] > [301 Moved Permanently]
 ```
+## Integration with AuCon
+
+If you are using AuCon for automated subdomain enumeration, you can monitor your findings with Statix to detect status changes over time. Simply use the output from AuCon as the input file for Statix:
+
+```bash
+aucon example.com > subdomains.txt
+statix -f subdomains.txt
+```
+
+This allows you to continuously track the status of your discovered subdomains and detect any changes efficiently.
 
 ## Troubleshooting
-- If `httpx` is not installed, install it using Go.
-- Ensure your subdomains file is not empty.
-- Check that the results directory has proper write permissions.
+
+If httpx is not installed, install it using Go.
+
+Ensure your subdomains file is not empty.
+
+Check that the results directory has proper write permissions.
 
 ## Contribution
 Feel free to submit issues or pull requests to improve Statix!
